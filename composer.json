@@ -1,0 +1,19 @@
+{
+    "name": "aspyatkin/themis-finals-service3-checker",
+    "type": "project",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Alexander Pyatkin",
+            "email": "aspyatkin@gmail.com"
+        }
+    ],
+    "require": {
+        "slim/slim": "^3.0",
+        "bernard/bernard": "^0.12.3",
+        "monolog/monolog": "^1.21",
+        "spomky-labs/base64url": "^1.0",
+        "predis/predis": "^1.1",
+        "rmccue/requests": "^1.6"
+    }
+}
