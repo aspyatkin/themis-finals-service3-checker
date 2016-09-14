@@ -4,8 +4,8 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#composer-lock-the-lock-file",
         "This file is @generated automatically"
     ],
-    "hash": "6de6df23926aafe27e40586a686a4902",
-    "content-hash": "26dd5e433e5b4dfd2da50f32f4c0602a",
+    "hash": "9909d73bb102383d4da3b7e7ccc85fbe",
+    "content-hash": "15eb88fb3e1d9e73f9af50ca5ff6fe05",
     "packages": [
         {
             "name": "bernard/bernard",
@@ -525,6 +525,64 @@
                 "sockets"
             ],
             "time": "2014-05-18 04:59:02"
+        },
+        {
+            "name": "sentry/sentry",
+            "version": "1.2.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/getsentry/sentry-php.git",
+                "reference": "ca5fdf1aebc31b15e3f9c344e80e171f02e9c4d9"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/getsentry/sentry-php/zipball/ca5fdf1aebc31b15e3f9c344e80e171f02e9c4d9",
+                "reference": "ca5fdf1aebc31b15e3f9c344e80e171f02e9c4d9",
+                "shasum": ""
+            },
+            "require": {
+                "ext-curl": "*",
+                "monolog/monolog": "*",
+                "php": ">=5.2.4"
+            },
+            "conflict": {
+                "raven/raven": "*"
+            },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "^1.8.0",
+                "phpunit/phpunit": "^4.6.6"
+            },
+            "bin": [
+                "bin/sentry"
+            ],
+            "type": "library",
+            "extra": {
+                "branch-alias": {
+                    "dev-master": "1.2.x-dev"
+                }
+            },
+            "autoload": {
+                "psr-0": {
+                    "Raven_": "lib/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "BSD-3-Clause"
+            ],
+            "authors": [
+                {
+                    "name": "David Cramer",
+                    "email": "dcramer@gmail.com"
+                }
+            ],
+            "description": "A PHP client for Sentry (http://getsentry.com)",
+            "homepage": "http://getsentry.com",
+            "keywords": [
+                "log",
+                "logging"
+            ],
+            "time": "2016-09-08 17:37:59"
         },
         {
             "name": "slim/slim",

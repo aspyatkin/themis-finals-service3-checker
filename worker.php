@@ -19,6 +19,15 @@ use Bernard\Router\SimpleRouter;
 use Bernard\Message\DefaultMessage;
 use Base64Url\Base64Url;
 
+$ravenEnabled = getenv('SENTRY_DSN') !== false;
+$ravenClient = null;
+
+if ($ravenEnabled) {
+    $ravenClient = new Raven_Client(getenv('SENTRY_DSN'), [
+        'curl_method' => 'async'
+    ]);
+}
+
 class Metadata
 {
     public $timestamp;
@@ -89,6 +98,12 @@ class ActionService
                 $result = $rawResult;
             }
         } catch (Exception $e) {
+            global $ravenEnabled;
+            global $ravenClient;
+            if ($ravenEnabled) {
+                $ravenClient->captureException($e);
+            }
+
             $this->logger->error($e->getMessage());
         }
         return [$result, $updatedAdjunct];
@@ -136,6 +151,38 @@ class ActionService
             $processingTime
         );
 
+        global $ravenEnabled;
+        global $ravenClient;
+        if ($ravenEnabled) {
+            $shortLogMessage = sprintf(
+                'PUSH `%s...` /%d to `%s` - status %s',
+                substr($params['flag'], 0, 8),
+                $metadata->round,
+                $metadata->teamName,
+                Result::getName($status)
+            );
+
+            $ravenData = [
+                'level' => 'info',
+                'tags' => [
+                    'tf_operation' => 'push',
+                    'tf_status' => Result::getName($status),
+                    'tf_team' => $metadata->teamName,
+                    'tf_service' => $metadata->serviceName,
+                    'tf_round' => $metadata->round
+                ],
+                'extra' => [
+                    'endpoint' => $params['endpoint'],
+                    'flag' => $params['flag'],
+                    'adjunct' => $jobResult['adjunct'],
+                    'delivery_time' => $deliveryTime,
+                    'processing_time' => $processingTime
+                ]
+            ];
+
+            $ravenClient->captureMessage($shortLogMessage, [], $ravenData);
+        }
+
         $this->logger->info($logMessage);
 
         $uri = $jobData['report_url'];
@@ -153,6 +200,12 @@ class ActionService
         try {
             $result = \pull($endpoint, $flag, $adjunct, $metadata);
         } catch (Exception $e) {
+            global $ravenEnabled;
+            global $ravenClient;
+            if ($ravenEnabled) {
+                $ravenClient->captureException($e);
+            }
+
             $this->logger->error($e->getMessage());
         }
         return $result;
@@ -196,6 +249,37 @@ class ActionService
             $deliveryTime,
             $processingTime
         );
+
+        global $ravenEnabled;
+        global $ravenClient;
+        if ($ravenEnabled) {
+            $shortLogMessage = sprintf(
+                'PULL `%s...` /%d from `%s` - status %s',
+                substr($params['flag'], 0, 8),
+                $metadata->round,
+                $metadata->teamName,
+                Result::getName($status)
+            );
+
+            $ravenData = [
+                'level' => 'info',
+                'tags' => [
+                    'tf_operation' => 'pull',
+                    'tf_status' => Result::getName($status),
+                    'tf_team' => $metadata->teamName,
+                    'tf_service' => $metadata->serviceName,
+                    'tf_round' => $metadata->round
+                ],
+                'extra' => [
+                    'endpoint' => $params['endpoint'],
+                    'flag' => $params['flag'],
+                    'adjunct' => $params['adjunct'],
+                    'delivery_time' => $deliveryTime,
+                    'processing_time' => $processingTime
+                ]
+            ];
+            $ravenClient->captureMessage($shortLogMessage, [], $ravenData);
+        }
 
         $this->logger->info($logMessage);
 
