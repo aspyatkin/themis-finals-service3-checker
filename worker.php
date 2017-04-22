@@ -19,6 +19,9 @@ use Bernard\Router\SimpleRouter;
 use Bernard\Message\DefaultMessage;
 use Base64Url\Base64Url;
 
+use Jose\Factory\JWKFactory;
+use Jose\Loader;
+
 $ravenEnabled = getenv('SENTRY_DSN') !== false;
 $ravenClient = null;
 
@@ -85,15 +88,44 @@ class ActionService
         }
     }
 
-    public function internalPush($endpoint, $flag, $adjunct, $metadata)
+    protected function decodeCapsule($capsule) {
+        $wrapPrefix = getenv('THEMIS_FINALS_FLAG_WRAP_PREFIX');
+        $wrapSuffix = getenv('THEMIS_FINALS_FLAG_WRAP_SUFFIX');
+        $encodedPayload = substr(
+            $capsule,
+            strlen($wrapPrefix),
+            strlen($capsule) - strlen($wrapPrefix) - strlen($wrapSuffix)
+        );
+
+        $alg = 'ES256';
+        $key = JWKFactory::createFromKey(
+            str_replace('\n', "\n", getenv('THEMIS_FINALS_FLAG_SIGN_KEY_PUBLIC')),
+            '',
+            ['use' => 'sig', 'alg'=> $alg]
+        );
+
+        $loader = new Loader();
+        $decoded = $loader->loadAndVerifySignatureUsingKey(
+            $encodedPayload,
+            $key,
+            [$alg],
+            $signature_index
+        );
+
+        return $decoded->getClaims()['flag'];
+    }
+
+    public function internalPush($endpoint, $capsule, $label, $metadata)
     {
         $result = Result::INTERNAL_ERROR;
-        $updatedAdjunct = $adjunct;
+        $updatedLabel = $label;
+        $message = null;
         try {
-            $rawResult = \push($endpoint, $flag, $adjunct, $metadata);
-            if (is_array($rawResult) && count($rawResult) == 2) {
+            $rawResult = \push($endpoint, $capsule, $label, $metadata);
+            if (is_array($rawResult) && count($rawResult) == 3) {
                 $result = $rawResult[0];
-                $updatedAdjunct = $rawResult[1];
+                $updatedLabel = $rawResult[1];
+                $message = $rawResult[2];
             } else {
                 $result = $rawResult;
             }
@@ -106,7 +138,7 @@ class ActionService
 
             $this->logger->error($e->getMessage());
         }
-        return [$result, $updatedAdjunct];
+        return [$result, $updatedLabel, $message];
     }
 
     public function queuePush($jobData)
@@ -117,21 +149,25 @@ class ActionService
         $timestampCreated = $parsedTimestamp->getTimestamp();
         $timestampDelivered = microtime(true);
 
+        $flag = $this->decodeCapsule($params['capsule']);
+
         $res = $this->internalPush(
             $params['endpoint'],
-            $params['flag'],
-            Base64Url::decode($params['adjunct']),
+            $params['capsule'],
+            Base64Url::decode($params['label']),
             $metadata
         );
         $status = $res[0];
-        $updatedAdjunct = $res[1];
+        $updatedLabel = $res[1];
+        $message = $res[2];
 
         $timestampProcessed = microtime(true);
 
         $jobResult = [
             'status' => $status,
-            'flag' => $params['flag'],
-            'adjunct' => Base64Url::encode($updatedAdjunct)
+            'flag' => $flag,
+            'label' => Base64Url::encode($updatedLabel),
+            'message' => $message
         ];
 
         $deliveryTime = floatSecondsBetween($timestampDelivered, $timestampCreated);
@@ -139,14 +175,14 @@ class ActionService
 
         $logMessage = sprintf(
             'PUSH flag `%s` /%d to `%s`@`%s` (%s) - status %s,'.
-            ' adjunct `%s` [delivery %.2fs, processing %.2fs]',
-            $params['flag'],
+            ' label `%s` [delivery %.2fs, processing %.2fs]',
+            $flag,
             $metadata->round,
             $metadata->serviceName,
             $metadata->teamName,
             $params['endpoint'],
             Result::getName($status),
-            $jobResult['adjunct'],
+            $jobResult['label'],
             $deliveryTime,
             $processingTime
         );
@@ -156,7 +192,7 @@ class ActionService
         if ($ravenEnabled) {
             $shortLogMessage = sprintf(
                 'PUSH `%s...` /%d to `%s` - status %s',
-                substr($params['flag'], 0, 8),
+                substr($flag, 0, 8),
                 $metadata->round,
                 $metadata->teamName,
                 Result::getName($status)
@@ -173,8 +209,9 @@ class ActionService
                 ],
                 'extra' => [
                     'endpoint' => $params['endpoint'],
-                    'flag' => $params['flag'],
-                    'adjunct' => $jobResult['adjunct'],
+                    'flag' => $flag,
+                    'label' => $jobResult['label'],
+                    'message' => $jobResult['message'],
                     'delivery_time' => $deliveryTime,
                     'processing_time' => $processingTime
                 ]
@@ -194,11 +231,18 @@ class ActionService
         $this->logger->info($r->status_code);
     }
 
-    function internalPull($endpoint, $flag, $adjunct, $metadata)
+    function internalPull($endpoint, $capsule, $label, $metadata)
     {
         $result = Result::INTERNAL_ERROR;
+        $message = null;
         try {
-            $result = \pull($endpoint, $flag, $adjunct, $metadata);
+            $rawResult = \pull($endpoint, $capsule, $label, $metadata);
+            if (is_array($rawResult) && count($rawResult) == 2) {
+                $result = $rawResult[0];
+                $message = $rawResult[1];
+            } else {
+                $result = $rawResult;
+            }
         } catch (Exception $e) {
             global $ravenEnabled;
             global $ravenClient;
@@ -208,7 +252,7 @@ class ActionService
 
             $this->logger->error($e->getMessage());
         }
-        return $result;
+        return [$result, $message];
     }
 
     public function queuePull($jobData)
@@ -219,18 +263,23 @@ class ActionService
         $timestampCreated = $parsedTimestamp->getTimestamp();
         $timestampDelivered = microtime(true);
 
-        $status = $this->internalPull(
+        $flag = $this->decodeCapsule($params['capsule']);
+
+        $res = $this->internalPull(
             $params['endpoint'],
-            $params['flag'],
-            Base64Url::decode($params['adjunct']),
+            $params['capsule'],
+            Base64Url::decode($params['label']),
             $metadata
         );
+        $status = $res[0];
+        $message = $res[1];
 
         $timestampProcessed = microtime(true);
 
         $jobResult = [
             'request_id' => $params['request_id'],
-            'status' => $status
+            'status' => $status,
+            'message' => $message
         ];
 
         $deliveryTime = floatSecondsBetween($timestampDelivered, $timestampCreated);
@@ -238,13 +287,13 @@ class ActionService
 
         $logMessage = sprintf(
             'PULL flag `%s` /%d from `%s`@`%s` (%s) with '.
-            'adjunct `%s` - status %s [delivery %.2fs, processing %.2fs]',
-            $params['flag'],
+            'label `%s` - status %s [delivery %.2fs, processing %.2fs]',
+            $flag,
             $metadata->round,
             $metadata->serviceName,
             $metadata->teamName,
             $params['endpoint'],
-            $params['adjunct'],
+            $params['label'],
             Result::getName($status),
             $deliveryTime,
             $processingTime
@@ -255,7 +304,7 @@ class ActionService
         if ($ravenEnabled) {
             $shortLogMessage = sprintf(
                 'PULL `%s...` /%d from `%s` - status %s',
-                substr($params['flag'], 0, 8),
+                substr($flag, 0, 8),
                 $metadata->round,
                 $metadata->teamName,
                 Result::getName($status)
@@ -272,8 +321,9 @@ class ActionService
                 ],
                 'extra' => [
                     'endpoint' => $params['endpoint'],
-                    'flag' => $params['flag'],
-                    'adjunct' => $params['adjunct'],
+                    'flag' => $flag,
+                    'label' => $params['label'],
+                    'message' => $params['message'],
                     'delivery_time' => $deliveryTime,
                     'processing_time' => $processingTime
                 ]
