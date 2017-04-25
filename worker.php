@@ -209,6 +209,7 @@ class ActionService
                 ],
                 'extra' => [
                     'endpoint' => $params['endpoint'],
+                    'capsule' => $params['capsule'],
                     'flag' => $flag,
                     'label' => $jobResult['label'],
                     'message' => $jobResult['message'],
@@ -321,9 +322,10 @@ class ActionService
                 ],
                 'extra' => [
                     'endpoint' => $params['endpoint'],
+                    'capsule' => $params['capsule'],
                     'flag' => $flag,
                     'label' => $params['label'],
-                    'message' => $params['message'],
+                    'message' => $jobResult['message'],
                     'delivery_time' => $deliveryTime,
                     'processing_time' => $processingTime
                 ]
